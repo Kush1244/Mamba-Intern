@@ -1,5 +1,8 @@
 import torch
 import argparse
+import torch.distributed as dist
+import torch.multiprocessing as mp
+from torch.nn.parallel import DistributedDataParallel as DDP
 
 from MambaModel import Mamba
 from transformers import AutoTokenizer, TrainingArguments
@@ -7,8 +10,17 @@ from trainer.data import ChatDataModule
 from trainer.mamba_trainer import MambaTrainer
 
 
-def run(args):
+def setup(rank, world_size):
+    dist.init_process_group("nccl", rank=rank, world_size=world_size)
+    torch.cuda.set_device(rank)
 
+
+def cleanup():
+    dist.destroy_process_group()
+
+
+def run(rank, world_size, args):
+    setup(rank, world_size)
     # model = Mamba.from_pretrained(args.model, dtype=torch.bfloat16, device="cuda")
     model = Mamba.from_pretrained(args.model)
     tokenizer = AutoTokenizer.from_pretrained(args.tokenizer)
@@ -44,9 +56,10 @@ def run(args):
 
     trainer.train()
     trainer.save_model("./")
+    cleanup()
 
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", type=str, default="state-spaces/mamba-130m")
     parser.add_argument("--tokenizer", type=str, default="EleutherAI/gpt-neox-20b")
@@ -59,3 +72,10 @@ if __name__ == "__main__":
     args = parser.parse_args()
     print(args)
     run(args)
+
+    world_size = torch.cuda.device_count()
+    mp.spawn(run, args=(world_size, args), nprocs=world_size, join=True)
+
+
+if __name__ == "__main__":
+    main()
