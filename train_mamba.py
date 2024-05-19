@@ -9,6 +9,8 @@ from transformers import AutoTokenizer, TrainingArguments
 from trainer.data import ChatDataModule
 from trainer.mamba_trainer import MambaTrainer
 
+from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
+
 
 def setup(rank, world_size):
     dist.init_process_group("nccl", rank=rank, world_size=world_size)
@@ -19,10 +21,10 @@ def cleanup():
     dist.destroy_process_group()
 
 
-def run(rank, world_size, args):
-    setup(rank, world_size)
+def run(args):
+    # setup(rank, world_size)
     # model = Mamba.from_pretrained(args.model, dtype=torch.bfloat16, device="cuda")
-    model = Mamba.from_pretrained(args.model)
+    model = MambaLMHeadModel.from_pretrained(args.model)
     tokenizer = AutoTokenizer.from_pretrained(args.tokenizer)
     tokenizer.eos_token = "<|endoftext|>"
     tokenizer.pad_token = tokenizer.eos_token
@@ -56,7 +58,7 @@ def run(rank, world_size, args):
 
     trainer.train()
     trainer.save_model("./")
-    cleanup()
+    # cleanup()
 
 
 def main():
@@ -70,11 +72,13 @@ def main():
     parser.add_argument("--data_path", type=str, default="./data/ultrachat_small.jsonl")
     parser.add_argument("--num_epochs", type=int, default=1)
     args = parser.parse_args()
-    print(args)
     run(args)
+    return
+    print(args)
 
     world_size = torch.cuda.device_count()
     mp.spawn(run, args=(world_size, args), nprocs=world_size, join=True)
+    # mp.spawn(run, args=(world_size, args), nprocs=world_size, join=True)
 
 
 if __name__ == "__main__":
